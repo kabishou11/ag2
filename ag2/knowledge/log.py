@@ -39,7 +39,10 @@ class EventLogWriter:
         prefix = f"{stream_id}.dropped-"
         entries = await self._store.list(LOG_PREFIX)
         existing = [e for e in entries if e.startswith(prefix) and e.endswith(".jsonl")]
-        n = len(existing) + 1
+        # Number after the highest existing segment, not the count: once an older
+        # segment is gone, the count would reuse (and overwrite) a live one.
+        suffixes = (e[len(prefix) : -len(".jsonl")] for e in existing)
+        n = max((int(s) for s in suffixes if s.isdigit()), default=0) + 1
         path = f"{LOG_PREFIX}{stream_id}.dropped-{n}.jsonl"
         lines = self._serialize_events(events)
         await self._store.write(path, "\n".join(lines))

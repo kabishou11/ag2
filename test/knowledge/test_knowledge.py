@@ -165,6 +165,31 @@ class TestEventLogWriter:
         assert loaded[1].parts[0].content == "batch-2"
         assert loaded[2].parts[0].content == "final"
 
+    async def test_persist_dropped_after_gap_uses_max_plus_one(self) -> None:
+        store = MemoryKnowledgeStore()
+        writer = EventLogWriter(store)
+        stream_id = uuid4()
+
+        await writer.persist_dropped(stream_id, [ModelRequest([TextInput("batch-1")])])
+        await writer.persist_dropped(stream_id, [ModelRequest([TextInput("batch-2")])])
+
+        # Simulate cleanup/retention removing the earliest segment.
+        await store.delete(f"/log/{stream_id}.dropped-1.jsonl")
+
+        await writer.persist_dropped(stream_id, [ModelRequest([TextInput("batch-3")])])
+        await writer.persist(stream_id, [ModelRequest([TextInput("final")])])
+
+        entries = await store.list("/log/")
+        assert f"{stream_id}.dropped-2.jsonl" in entries
+        assert f"{stream_id}.dropped-3.jsonl" in entries
+        assert f"{stream_id}.dropped-1.jsonl" not in entries
+
+        loaded = await writer.load(stream_id)
+        assert len(loaded) == 3
+        assert loaded[0].parts[0].content == "batch-2"
+        assert loaded[1].parts[0].content == "batch-3"
+        assert loaded[2].parts[0].content == "final"
+
     async def test_load_empty(self) -> None:
         store = MemoryKnowledgeStore()
         writer = EventLogWriter(store)
